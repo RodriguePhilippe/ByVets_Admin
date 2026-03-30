@@ -13,14 +13,17 @@ import { BsChevronExpand } from "react-icons/bs";
 import { FiX } from "react-icons/fi";
 import SelectFilter from "@/components/table/SelectFilter";
 import Link from 'next/link';
+import SelectColumn from "./SelectColumn";
 
 const columnHelper = createColumnHelper();
 
 export default function FilterTable({selectTable, type}) {
+    const [mounted, setMounted] = React.useState(false);
     const [data, setData] = React.useState([]);
     const [baseUrl, setBaseUrl] = React.useState(selectTable.url);
     const [currentUrl, setCurrentUrl] = React.useState(baseUrl);
     const [link, setLink] = React.useState([]);
+    const [pagination, setPagination] = React.useState(20);
     const [columns, setColumns] = React.useState(
         Object.entries(selectTable.columns).map(([key, label]) =>
             columnHelper.accessor(key, { header: label })
@@ -111,7 +114,7 @@ export default function FilterTable({selectTable, type}) {
 
         async function loadData(){
             try {
-                const res = await fetch(selectTable.url + `?page=${page}`)
+                const res = await fetch(selectTable.url + `?page=${page}&pagination=${pagination}`);
                 const json = await res.json()
                 setMaxPage(json.last_page)
                 setData(json.data)
@@ -121,6 +124,27 @@ export default function FilterTable({selectTable, type}) {
         }
         loadData();
     }, [selectTable]);
+
+    const storageKey = `columnVisibility_${type}`;
+    const [columnVisibility, setColumnVisibility] = React.useState(() => {
+        if (typeof window === "undefined") return {};
+
+        const saved = localStorage.getItem(storageKey);
+        return saved ? JSON.parse(saved) : {};
+    });
+
+    React.useEffect(() => {
+        if (Object.keys(columnVisibility).length !== columns.length) {
+            const visibility = Object.fromEntries(
+                columns.map(col => [col.id ?? col.accessorKey, true])
+            );
+            setColumnVisibility(visibility);
+        }
+    }, [columns]);
+
+    React.useEffect(() => {
+        localStorage.setItem(storageKey, JSON.stringify(columnVisibility));
+    }, [columnVisibility, storageKey]);
 
     function changeSortingStatus(name) {
         setSortingTable((prev) => {
@@ -144,12 +168,17 @@ export default function FilterTable({selectTable, type}) {
         });
     }
 
+    React.useEffect(() => {
+        getNewData(baseUrl, page);
+    }, [pagination]);
+
     async function getNewData(url, page) {
         if(url === baseUrl){
             url += `?page=${page}`
         }else{
             url += `&page=${page}`
         }
+        url += `&pagination=${pagination}`
         try {
             const res = await fetch(url)
             const json = await res.json()
@@ -157,7 +186,7 @@ export default function FilterTable({selectTable, type}) {
             setData(json.data)
         } catch (error) {
             console.error("Erreur API :", error)
-        } 
+        }
     }
 
     function handleFilter({column, operator, value}) {
@@ -172,10 +201,11 @@ export default function FilterTable({selectTable, type}) {
 
     async function download_csv(url) {
         if(url === baseUrl){
-            url += `?all=true`
+            url += `?pagination=all`
         }else{
-            url += `&all=true`
+            url += `&pagination=all`
         }
+
         const res = await fetch(url)
         const csvData = await res.json()
 
@@ -193,26 +223,35 @@ export default function FilterTable({selectTable, type}) {
         data,
         columns,
         getCoreRowModel: getCoreRowModel(),
+        state: {
+            columnVisibility
+        }
     });
+
+    React.useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    if (!mounted) return null;
 
     return (
         <div className="p-2">
-            <div className="flex">
-                <button onClick={() => {setShowModal(true)}} className={"bg-gray-400 rounded-lg p-2 mb-2 cursor-pointer"}>
+            <div className="flex items-center gap-2 mb-2">
+                <button onClick={() => {setShowModal(true)}} className={"bg-gray-400 rounded-lg p-2 cursor-pointer"}>
                     Filtres
                 </button>
                 <button
                     onClick={() => {
                         download_csv(currentUrl);
                     }}
-                    className={"bg-gray-400 rounded-lg p-2 ml-2 mb-2 cursor-pointer"}
+                    className={"bg-gray-400 rounded-lg p-2 cursor-pointer"}
                 >
                     Exporter
                 </button>
                 <SelectFilter showModal={showModal} setShowModal={setShowModal} columns={columns} handleFilter={handleFilter} optionsFilter={optionsFilter} selectTable={selectTable} />
                 {hasFilter && (
                     <button
-                        className="bg-gray-400 rounded-lg px-3 py-2 mb-2 ml-2 cursor-pointer flex items-center gap-2"
+                        className="bg-gray-400 rounded-lg px-3 py-2 cursor-pointer flex items-center gap-2"
                         onClick={() => {
                             setHasFilter(false)
                             getNewData(baseUrl, page)
@@ -226,68 +265,75 @@ export default function FilterTable({selectTable, type}) {
                         <FiX className="shrink-0" />
                     </button>
                 )}
+                <SelectColumn columnVisibility={columnVisibility} setColumnVisibility={setColumnVisibility} selectedTable={selectTable} />
+                <div>
+                    Pagination
+                    <select
+                        onChange={(e) => {
+                            setPagination(e.target.value);
+                        }}
+                        value={pagination}
+                        className="ml-2"
+                    >
+                        <option value={10}>10</option>
+                        <option value={20}>20</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                        <option value={"all"}>Tous</option>
+                    </select>
+                </div>
             </div>
-            <table className="border-collapse border border-gray-300 w-full">
-                <thead>
-                    {table.getHeaderGroups().map((headerGroup) => (
-                        <tr key={headerGroup.id} className="border-b">
-                            {headerGroup.headers.map((header) => (
-                                <th key={header.id} className="border px-2 py-1 text-left cursor-pointer" onClick={() => changeSortingStatus(header.id)}>
-                                    <div className="flex items-center">
-                                        {header.isPlaceholder
-                                            ? null
-                                            : flexRender(
-                                            header.column.columnDef.header,
-                                            header.getContext()
-                                        )}
-                                        {sortingTable[header.id] === 1 ? <BsChevronUp size={15}/> : sortingTable[header.id] === 2 ? <BsChevronDown size={15}/> : <BsChevronExpand size={15}/> }
-                                    </div>
-                                </th>
-                            ))}
-                            {link && (
-                                <th>{link.name}</th>
-                            )}
-                        </tr>
-                    ))}
-                </thead>
 
-                <tbody>
+            <div className="border border-gray-300 w-full rounded-lg overflow-hidden">
+                {table.getHeaderGroups().map(headerGroup => (
+                    <div key={headerGroup.id} className="flex border-b bg-gray-100">
+                        {headerGroup.headers.map(header => (
+                            <div
+                                key={header.id}
+                                className="flex-1 p-2 text-left cursor-pointer flex items-center border-r last:border-r-0"
+                                onClick={() => changeSortingStatus(header.id)}
+                            >
+                                {!header.isPlaceholder && flexRender(header.column.columnDef.header, header.getContext())}
+                                {sortingTable[header.id] === 1 ? (
+                                    <BsChevronUp size={15} className="ml-1" />
+                                ) : sortingTable[header.id] === 2 ? (
+                                    <BsChevronDown size={15} className="ml-1" />
+                                ) : (
+                                    <BsChevronExpand size={15} className="ml-1" />
+                                )}
+                            </div>
+                        ))}
+                        {link && (
+                            <div className="p-2 border-r last:border-r-0 flex-1 text-center">{link.name}</div>
+                        )}
+                    </div>
+                ))}
+
                 {table.getRowModel().rows.length === 0 ? (
-                    <tr>
-                        <td
-                            colSpan={columns.length}
-                            className="text-center p-4 text-gray-500"
-                        >
-                            Aucun profil trouvé
-                        </td>
-                    </tr>
+                    <div className="p-4 text-center text-gray-500">Aucun profil trouvé</div>
                 ) : (
-                    table.getRowModel().rows.map((row) => (
-                        <tr key={row.id} className="border-b">
-                            {row.getVisibleCells().map((cell) => (
-                                <td key={cell.id} className="border p-2">
-                                    {flexRender(
-                                        cell.column.columnDef.cell,
-                                        cell.getContext()
-                                    )}
-                                </td>
+                    table.getRowModel().rows.map(row => (
+                        <div key={row.id} className="flex border-b hover:bg-gray-50">
+                            {row.getVisibleCells().map(cell => (
+                                <div key={cell.id} className="flex-1 p-2 border-r last:border-r-0">
+                                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                </div>
                             ))}
 
                             {link && (
-                                <td className={"border-2 text-center align-middle"}>
+                                <div className="flex-1 p-2 border-r last:border-r-0 text-center">
                                     <Link
                                         className="bg-gray-200 cursor-pointer px-3 py-1 rounded-lg"
                                         href={`${link.url}${row.original[link.params]}`}
                                     >
                                         Voir
                                     </Link>
-                                </td>
+                                </div>
                             )}
-                        </tr>
+                        </div>
                     ))
                 )}
-                </tbody>
-            </table>
+            </div>
 
             <div className="flex mt-2 gap-3">
                 <button className={`bg-secondary p-2 rounded-lg border-2 border-gray-600 hover:bg-gray-500 ${page > 1 ? 'cursor-pointer' : 'cursor-not-allowed'}`}
