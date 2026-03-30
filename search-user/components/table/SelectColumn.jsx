@@ -4,7 +4,7 @@ import * as React from "react";
 import { Popover } from "radix-ui";
 import { FiX } from "react-icons/fi";
 
-export default function SelectColumn({columnVisibility, setColumnVisibility, selectedTable}) {
+export default function SelectColumn({columnVisibility, setColumnVisibility, selectedTable, storageKey}) {
 
     function getLabel(columns, key) {
         return key.split('.').reduce((acc, part) => acc?.[part], columns);
@@ -23,14 +23,13 @@ export default function SelectColumn({columnVisibility, setColumnVisibility, sel
                         <p className="Text" style={{ marginBottom: 10 }}>
                             Colonnes visualisées
                         </p>
-                        {Object.entries(columnVisibility).map(([key, checked]) => (
+                        {columnVisibility && Object.entries(columnVisibility).map(([key, checked]) => (
                             <div key={key} className={"flex items-center gap-2"}>
                                 <input type={"checkbox"} checked={!!checked}
                                        onChange={() => {
-                                           setColumnVisibility(prev => ({
-                                               ...prev,
-                                               [key]: !prev[key]
-                                           }));
+                                           const newVisibility = { ...columnVisibility, [key]: !columnVisibility[key] };
+                                           setColumnVisibility(newVisibility);
+                                           localStorage.setItem(storageKey, JSON.stringify(newVisibility));
                                        }}
                                 />
                                 <label htmlFor={key}>{getLabel(selectedTable.columns, key) ?? key}</label>

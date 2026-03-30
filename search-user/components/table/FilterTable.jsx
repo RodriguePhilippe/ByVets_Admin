@@ -126,25 +126,24 @@ export default function FilterTable({selectTable, type}) {
     }, [selectTable]);
 
     const storageKey = `columnVisibility_${type}`;
-    const [columnVisibility, setColumnVisibility] = React.useState(() => {
+    const [columnVisibility, setColumnVisibility] = React.useState();
+
+    React.useEffect(() => {
         if (typeof window === "undefined") return {};
 
-        const saved = localStorage.getItem(storageKey);
-        return saved ? JSON.parse(saved) : {};
-    });
+        const visibility = Object.fromEntries(
+            columns.map(col => [col.id ?? col.accessorKey, true])
+        );
 
-    React.useEffect(() => {
-        if (Object.keys(columnVisibility).length !== columns.length) {
-            const visibility = Object.fromEntries(
-                columns.map(col => [col.id ?? col.accessorKey, true])
-            );
-            setColumnVisibility(visibility);
+        if (localStorage.getItem(storageKey) !== "undefined") {
+            const oldSelectedColumns = JSON.parse(localStorage.getItem(storageKey));
+            if (oldSelectedColumns && Object.keys(oldSelectedColumns).join() === Object.keys(visibility).join()) {
+                return setColumnVisibility(oldSelectedColumns);
+            }
         }
-    }, [columns]);
 
-    React.useEffect(() => {
-        localStorage.setItem(storageKey, JSON.stringify(columnVisibility));
-    }, [columnVisibility, storageKey]);
+        setColumnVisibility(visibility);
+    }, [columns]);
 
     function changeSortingStatus(name) {
         setSortingTable((prev) => {
@@ -209,8 +208,8 @@ export default function FilterTable({selectTable, type}) {
         const res = await fetch(url)
         const csvData = await res.json()
 
-        let csvHeader = Object.keys(csvData[0]).join(',') + '\n';
-        let csvBody = csvData.map(row => Object.values(row).join(',')).join('\n');
+        let csvHeader = Object.keys(csvData.data[0]).join(',') + '\n';
+        let csvBody = csvData.data.map(row => Object.values(row).join(',')).join('\n');
 
         var hiddenElement = document.createElement('a');
         hiddenElement.href = 'data:text/csv;charset=utf-8,' + encodeURI(csvHeader + csvBody);
@@ -233,6 +232,9 @@ export default function FilterTable({selectTable, type}) {
     }, []);
 
     if (!mounted) return null;
+
+    const visibleCount = table.getVisibleLeafColumns().length + (link ? 1 : 0);
+    const gridTemplate = `repeat(${visibleCount}, minmax(0, 1fr))`;
 
     return (
         <div className="p-2">
@@ -265,7 +267,7 @@ export default function FilterTable({selectTable, type}) {
                         <FiX className="shrink-0" />
                     </button>
                 )}
-                <SelectColumn columnVisibility={columnVisibility} setColumnVisibility={setColumnVisibility} selectedTable={selectTable} />
+                <SelectColumn columnVisibility={columnVisibility} setColumnVisibility={setColumnVisibility} selectedTable={selectTable} storageKey={storageKey} />
                 <div>
                     Pagination
                     <select
@@ -286,25 +288,31 @@ export default function FilterTable({selectTable, type}) {
 
             <div className="border border-gray-300 w-full rounded-lg overflow-hidden">
                 {table.getHeaderGroups().map(headerGroup => (
-                    <div key={headerGroup.id} className="flex border-b bg-gray-100">
+                    <div
+                        key={headerGroup.id}
+                        className="border-b bg-gray-100"
+                        style={{ display: 'grid', gridTemplateColumns: gridTemplate }}
+                    >
                         {headerGroup.headers.map(header => (
                             <div
                                 key={header.id}
-                                className="flex-1 p-2 text-left cursor-pointer flex items-center border-r last:border-r-0"
+                                className="p-2 text-left cursor-pointer flex items-start gap-1 border-r last:border-r-0 min-w-0"
                                 onClick={() => changeSortingStatus(header.id)}
                             >
-                                {!header.isPlaceholder && flexRender(header.column.columnDef.header, header.getContext())}
+                                <span className="break-words min-w-0">
+                                    {!header.isPlaceholder && flexRender(header.column.columnDef.header, header.getContext())}
+                                </span>
                                 {sortingTable[header.id] === 1 ? (
-                                    <BsChevronUp size={15} className="ml-1" />
+                                    <BsChevronUp size={15} className="shrink-0 mt-0.5" />
                                 ) : sortingTable[header.id] === 2 ? (
-                                    <BsChevronDown size={15} className="ml-1" />
+                                    <BsChevronDown size={15} className="shrink-0 mt-0.5" />
                                 ) : (
-                                    <BsChevronExpand size={15} className="ml-1" />
+                                    <BsChevronExpand size={15} className="shrink-0 mt-0.5" />
                                 )}
                             </div>
                         ))}
                         {link && (
-                            <div className="p-2 border-r last:border-r-0 flex-1 text-center">{link.name}</div>
+                            <div className="p-2 border-r last:border-r-0 text-center">{link.name}</div>
                         )}
                     </div>
                 ))}
@@ -313,15 +321,18 @@ export default function FilterTable({selectTable, type}) {
                     <div className="p-4 text-center text-gray-500">Aucun profil trouvé</div>
                 ) : (
                     table.getRowModel().rows.map(row => (
-                        <div key={row.id} className="flex border-b hover:bg-gray-50">
+                        <div
+                            key={row.id}
+                            className="border-b hover:bg-gray-50"
+                            style={{ display: 'grid', gridTemplateColumns: gridTemplate }}
+                        >
                             {row.getVisibleCells().map(cell => (
-                                <div key={cell.id} className="flex-1 p-2 border-r last:border-r-0">
+                                <div key={cell.id} className="p-2 border-r last:border-r-0 break-words min-w-0">
                                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                                 </div>
                             ))}
-
                             {link && (
-                                <div className="flex-1 p-2 border-r last:border-r-0 text-center">
+                                <div className="p-2 border-r last:border-r-0 text-center">
                                     <Link
                                         className="bg-gray-200 cursor-pointer px-3 py-1 rounded-lg"
                                         href={`${link.url}${row.original[link.params]}`}
